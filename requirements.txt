@@ -5,4 +5,4 @@ pandas==3.0.3
 python-dotenv==1.2.2
 pydantic==2.13.4
 google-genai==2.8.0
-streamlit==1.37.1
+streamlit==1.58.0

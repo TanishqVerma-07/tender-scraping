@@ -141,6 +141,70 @@ def is_email_configured():
     return bool(sender) and bool(password) and bool(get_email_recipients())
 
 # ==========================================
+# 2c. GITHUB AUTO-SYNC
+# ==========================================
+# tenders.db edited here (websites/keywords/blacklist/prompts) lives wherever this
+# dashboard happens to be running. The daily GitHub Actions pipeline checks out a FRESH
+# copy from GitHub every run, so it never sees a change made here unless we push it back
+# to the repo ourselves, immediately after every save.
+GITHUB_REPO = "TanishqVerma-07/tender-scraping"
+
+def get_github_token():
+    # Streamlit Cloud secrets take priority (st.secrets); falls back to .env for local runs.
+    try:
+        token = st.secrets.get("GITHUB_TOKEN", "")
+        if token:
+            return token
+    except Exception:
+        pass
+    return read_env_value("GITHUB_TOKEN")
+
+def is_github_sync_configured():
+    return bool(get_github_token())
+
+def sync_tenders_db_to_github():
+    """Best-effort: commit + push tenders.db to GitHub so tomorrow's automated
+    pipeline run picks up dashboard edits. Failures are shown as a warning, not a
+    crash — the local save to tenders.db already succeeded regardless of this."""
+    token = get_github_token()
+    if not token:
+        st.warning("Saved locally, but GitHub sync isn't configured — this change won't reach "
+                    "tomorrow's automated run until GITHUB_TOKEN is set. See Settings.")
+        return
+
+    repo_dir = os.path.dirname(os.path.abspath(__file__))
+    push_url = f"https://x-access-token:{token}@github.com/{GITHUB_REPO}.git"
+
+    def run_git(*args):
+        return subprocess.run(["git", *args], cwd=repo_dir, capture_output=True, text=True)
+
+    try:
+        run_git("config", "user.email", "dashboard@upjao.ai")
+        run_git("config", "user.name", "Upjao Dashboard")
+
+        diff = run_git("status", "--porcelain", "tenders.db")
+        if not diff.stdout.strip():
+            return  # nothing changed (e.g. identical overwrite)
+
+        run_git("add", "tenders.db")
+        run_git("commit", "-m", "Update tenders.db via dashboard")
+
+        # Pull first in case GitHub Actions pushed a commit since this container last synced.
+        pull = run_git("pull", "--rebase", "--autostash", push_url, "main")
+        if pull.returncode != 0:
+            st.warning(f"Saved locally, but GitHub sync hit a conflict pulling remote changes: "
+                       f"{pull.stderr.strip()[:200]}. Resolve manually or contact an admin.")
+            return
+
+        push = run_git("push", push_url, "main")
+        if push.returncode != 0:
+            st.warning(f"Saved locally, but pushing to GitHub failed: {push.stderr.strip()[:200]}")
+        else:
+            st.toast("Synced to GitHub — tomorrow's automated run will use this.", icon="✅")
+    except Exception as e:
+        st.warning(f"Saved locally, but GitHub sync failed unexpectedly: {e}")
+
+# ==========================================
 # 3. DATABASE INITIALIZATION
 # ==========================================
 def init_db():
@@ -188,6 +252,7 @@ def overwrite_items(table, items_list):
     conn.commit()
     conn.close()
     export_all_json()
+    sync_tenders_db_to_github()
 
 # ==========================================
 # 5. DIALOG CANVASES
@@ -393,6 +458,24 @@ with st.container(border=True):
         st.write("")
         if st.button("Edit email settings", use_container_width=True):
             email_setup_canvas()
+
+st.divider()
+
+# ==========================================
+# 8c. GITHUB SYNC STATUS
+# ==========================================
+st.subheader(":material/sync: GitHub Sync")
+st.caption("Website/keyword/blacklist edits made here are pushed to GitHub automatically so "
+           "tomorrow's automated daily run picks them up.")
+
+with st.container(border=True):
+    if is_github_sync_configured():
+        st.markdown(f'<span class="upjao-badge upjao-badge-ok">Connected to {GITHUB_REPO}</span>',
+                    unsafe_allow_html=True)
+    else:
+        st.markdown('<span class="upjao-badge upjao-badge-warn">Not configured</span>', unsafe_allow_html=True)
+        st.caption("Set a `GITHUB_TOKEN` repo secret (Streamlit Cloud → Settings → Secrets) "
+                   "or in `.env` locally, with permission to push to this repo.")
 
 st.divider()
 
