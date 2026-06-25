@@ -1,0 +1,49 @@
+name: Daily Tender Pipeline
+
+on:
+  schedule:
+    # 1:00 AM UTC = 6:30 AM IST. Email arrives ~7 AM IST after the run completes.
+    - cron: '0 1 * * *'
+  workflow_dispatch: {}  # allows manual "Run workflow" from the Actions tab for testing
+
+permissions:
+  contents: write  # needed to commit the updated cleansed database back to the repo
+
+jobs:
+  run-pipeline:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+
+      - name: Install Python dependencies
+        run: pip install -r requirements.txt
+
+      - name: Install Playwright Chromium + system deps
+        run: playwright install --with-deps chromium
+
+      - name: Write .env from GitHub secrets
+        run: |
+          cat > .env << EOF
+          EMAIL_SENDER="${{ secrets.EMAIL_SENDER }}"
+          EMAIL_PASSWORD="${{ secrets.EMAIL_PASSWORD }}"
+          EMAIL_RECIPIENT="${{ secrets.EMAIL_RECIPIENT }}"
+          GOOGLE_CLOUD_PROJECT="add your project id here"
+          GOOGLE_CLOUD_LOCATION="us-central1"
+          EOF
+
+      - name: Run full pipeline (scrape, clean, email)
+        run: python pipeline.py
+
+      - name: Commit updated cleansed database back to repo
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add upjao_cleansed_database.db tenders.db
+          git diff --cached --quiet || git commit -m "Daily pipeline run: update cumulative lead history"
+          git push

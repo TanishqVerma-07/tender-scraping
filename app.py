@@ -6,6 +6,18 @@ import os
 import subprocess
 
 # ==========================================
+# 0. PLAYWRIGHT BROWSER SETUP (first run only)
+# ==========================================
+# Hosting platforms like Streamlit Cloud have no generic "run this after pip install"
+# hook, so the Chromium binary scraper.py's browser fallback needs has to be installed
+# from code. Cached after the first run via a marker file (re-installing every page load
+# would be slow and pointless).
+_PLAYWRIGHT_MARKER = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".playwright_installed")
+if not os.path.exists(_PLAYWRIGHT_MARKER):
+    subprocess.run(["playwright", "install", "chromium"], check=False)
+    open(_PLAYWRIGHT_MARKER, "w").close()
+
+# ==========================================
 # 1. PAGE CONFIGURATION & GLOBALS
 # ==========================================
 st.set_page_config(page_title="Upjao AI Tender", page_icon=":material/policy:", layout="wide")
