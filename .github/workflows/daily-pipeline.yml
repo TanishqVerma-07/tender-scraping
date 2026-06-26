@@ -2,8 +2,9 @@ name: Daily Tender Pipeline
 
 on:
   schedule:
-    # 1:00 AM UTC = 6:30 AM IST. Email arrives ~7 AM IST after the run completes.
-    - cron: '0 1 * * *'
+    # 1:00 AM UTC ≈ 6:30 AM IST. Offset 5 min off the round hour — GitHub's scheduler is
+    # heavily congested at exact-hour times (':00') and can silently drop/delay jobs there.
+    - cron: '5 1 * * *'
   workflow_dispatch: {}  # allows manual "Run workflow" from the Actions tab for testing
 
 permissions:
